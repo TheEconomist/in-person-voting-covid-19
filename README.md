@@ -2,6 +2,7 @@
 
 ---- Description ----
 Code and data for graphic detail on in-person voting and covid spread
+
 Link: https://www.economist.com/graphic-detail/2021/07/10/in-person-voting-really-did-accelerate-covid-19s-spread-in-america
 
 ---- Files ----
