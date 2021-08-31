@@ -1,0 +1,250 @@
+---
+#title: "Stamped out: In-Person Voting and Covid"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(glmnet)
+library(dplyr)
+library(readr)
+library(lfe)
+library(radiant.data)
+library(data.table)
+
+fips_df <- read_csv("fips_df.csv")
+state_subset <- read_csv("state_subset.csv")
+fips_df %>% 
+  right_join(state_subset) %>%
+  mutate(pre_week_rate = pre_week_diff/pop_2018*100000)-> state_subset
+
+df = state_subset
+df = data.table(df)
+
+
+```
+## Stamped Out: In-Person Voting and Covid
+I begin by presenting the results of the model and then end with a variety of robustness checks for the models.
+
+### 1. Model Results
+
+#### 1.1 Initial Model & Variable Descriptions
+Initial model is presented below:
+
+```{r}
+
+model_turnout <- lm(post_election_rate ~ turnout + pre_election_rate + num_prec_pc + state + med_age +
+                         medIncome_2018 + pctPovty_2018 + unplmtRate_2018 + noins_u65_2018 +
+                         pctUrban_2010 + pct_vet + avg_householdsize + pct_snap + pctno_hs +
+                         pctcollege + popDens + pct_black + pct_hisp + pct_asian +  pct65plus +
+                         pct4064 + pct1840 + pctTrump_2016 + pre_week_rate,
+                       data = df, weights = pop_2018)
+
+summary(model_turnout)
+
+```
+
+The outcome variable is `post_election_rate`, which is the number of covid cases per 100,000 in the county between November 16th and November 30th. The variable of interest is `turnout`, which is the proportion of a county's residents who cast a vote in-person on Election Day (November 3rd, 2020). 
+
+I control at the county-level for: 
+
+* race [`pct_black`, `pct_hisp`, `pct_asian`],
+* education [`pctno_hs`, `pctcollege`], 
+* age [`med_age`, `pct65plus`, `pct4064`, `pct1840`]
+* socioeconomic status [`medIncome_2018`, `pctPovty_2018`, `unplmtRate_2018`],
+* urban [`pctUrban_2010`],
+* population density [`popDens`], 
+* Trump vote in 2016 [`pctTrump_2016`],
+* the number of precincts per capita [`num_prec_pc`],
+* health insurance enrollment [`noins_u65_2018`], 
+* state fixed effects [stateSTATENAME], 
+* and other demographic co-variates like the proportion of veterans [`pct_vet`], 
+* the average household size [`avg_householdsize`], 
+* and the proportion of county population using SNAP (food stamps) benefits [`pct_snap`].
+
+In addition, I control for a few covid incidence factors: 
+
+* `pre_week_rate`: the relative change in covid rates in the 2 weeks leading up to the election. This accounts for whether covid was increasing or decreasing in a county leading up to election day.
+* `pre_election_rate`: the number of covid cases per 100,000 people in a county between October 16 and October 30, before the election
+
+I find significance for `turnout` along with a host of other variables. 
+These results suggest that a 1% increase in in-person turnout on Election Day in a county is associated with a 
+5.08 case increase per 100,000 people. 
+
+#### 1.2 Simplified Models
+I then simplified the model using AIC to obtain a model incorporating the most important predictors. 
+
+In addition, I standardize the co-variates.
+
+```{r, echo = FALSE}
+
+for (var in c('turnout', 'pre_election_rate', 'num_prec_pc', 'pctUrban_2010', 'pct_snap',
+              'pct_hisp', 'pctTrump_2016', 'pre_week_rate')) {
+  df <- df[!is.na(get(var))]
+  df[, (paste0('std_', var)) := ((get(var)) - (weighted.mean(get(var), pop_2018))) /
+       (weighted.sd(get(var), pop_2018))]
+}
+
+fixed_fx <- felm(post_election_rate ~ std_turnout + std_pre_election_rate + std_num_prec_pc + std_pctUrban_2010 + 
+                   std_pct_snap + std_pct_hisp + std_pctTrump_2016 + std_pre_week_rate | state, df, weights = df$pop_2018)
+coefficient_plot <- cbind(fixed_fx$coefficients, fixed_fx$se)
+
+coefficient_plot <- cbind(fixed_fx$coefficients, fixed_fx$coefficients - fixed_fx$se, fixed_fx$coefficients + fixed_fx$se)
+colnames(coefficient_plot) <- c('mean_estimate', 'low_estimate', 'high_estimate')
+rownames(coefficient_plot) <- c('in_person_voting_rate_above_state_avg',
+                                'pre_election_covid_cases_per_100k', 'precincts_per_capita',
+                                'urban_pct', 'food_stamp_pct', 'hispanic_pct', 'trump_vote_2016', 'pre_election_trend')
+
+
+```
+
+```{r}
+
+coefficient_plot
+
+```
+Above, I present confidence intervals for the change in covid rates for a one-standard deviation
+increase in the co-variate. These results suggest that a one-standard deviation increase in the rate of
+in-person voting above the state average is associated with 58 additional covid cases
+per 100,000 people. 
+
+```{r}
+
+model_turnout = felm(post_election_rate ~ turnout + std_pre_election_rate + std_num_prec_pc + 
+                       std_pctUrban_2010 + std_pct_snap + std_pct_hisp + std_pctTrump_2016 + 
+                       std_pre_week_rate | state, data = df, weights = df$pop_2018)
+
+summary(model_turnout)
+```
+
+These results, with turnout un-standardized, are above. Now, with the model simplified to the most predictive co-variates the effect estimate is 4.95 additional covid cases per 100,000 for a 1% increase in the proportion of a county's residents who voted in-person on Election Day. This is consistent with the full model presented above that found an additional 5.08 covid cases per 100,000.
+
+### 2. Robustness
+
+I then perform a variety of robustness checks to ensure turnout is really a significant predictor.
+
+#### 2.1 State Sensitivity Checks
+First, I remove each state in my data, one at a time, to guarantee no single state is
+driving these results. For each of the ensuing regressions, I incorporate `pre_election_rate`
+using an offset term to more closely match traditional difference in differences. 
+
+```{r, echo = FALSE}
+
+state_list = as.character(unique(df$state))
+
+for(state_ex in state_list){
+  df_temp = df %>% filter(state != state_ex)
+  
+  model = lm(post_election_rate ~ turnout + num_prec_pc + pre_week_rate +  state + 
+               med_age + medIncome_2018 + pctPovty_2018 + unplmtRate_2018 + noins_u65_2018 + 
+               pctUrban_2010 + pct_vet + avg_householdsize + pct_snap + pctno_hs + pctcollege + 
+               popDens + pct_black + pct_hisp + pct_asian +  pct65plus + pct4064 + 
+               pct1840 + pctTrump_2016 + offset(pre_election_rate), data = df_temp, weights = pop_2018)
+  print(summary(model)[[5]][2,])
+}
+
+```
+I find significance for the turnout variable in each of the 20 regressions. 
+Furthermore, every regression provides an estimate at least as large as 3.75 additional covid cases per 100,000 for each 1% increase in in-person voting on Election Day. Under one specification, the effect is as large as 6.23 additional covid cases per 100,000.
+
+#### 2.2 LASSO Variable Selection
+I then use LASSO to select variables with lambda cross-validated.
+
+```{r}
+set.seed(07102021)
+df = df[complete.cases(df),]
+df %>% select(-c(post_covid_cases, pop_2018)) -> X
+X = X[,-c(2:10)]
+y = df$post_covid_cases
+
+X_test = model.matrix(post_covid_cases ~.-1 - county - FIPS - std_pre_week_rate - state_pre_rate -
+                        state_post_rate - state_inperson_rate - std_pre_election_rate - pre_election_rate - 
+                        std_turnout - std_num_prec_pc - std_pctUrban_2010 - std_pct_snap -
+                        std_pct_hisp - std_pctTrump_2016 - std_pre_week_rate + offset(pre_election_rate),data = df)
+X_test = X_test[,-c(21:26,47)]
+
+cvfit = cv.glmnet(X_test,y,alpha = 1, weights = X_test[,3])
+
+lasso_mod = glmnet(X_test, y, alpha = 1, weights = df$pop_2018, lambda = cvfit$lambda.min)
+coef(lasso_mod)
+
+```
+The results when LASSO selects variables are largely the same. These results suggest that there
+are 4 additional covid cases per 100,000 people for a 1% increase in the proportion of people who voted
+in person on Election Day.
+
+#### 2.3 County Temperature Checks
+I then incorporate October and November temperatures in a county to ensure that these results
+are not weather-dependent.
+
+```{r, echo = FALSE, message = FALSE}
+
+temp <- read_csv("temperatures.csv")
+
+df %>% left_join(temp) -> df_temp
+
+
+model_temp <- lm(post_election_rate ~ turnout + num_prec_pc + state + med_age +
+                         medIncome_2018 + pctPovty_2018 + unplmtRate_2018 + noins_u65_2018 +
+                         pctUrban_2010 + pct_vet + avg_householdsize + pct_snap + pctno_hs +
+                         pctcollege + popDens + pct_black + pct_hisp + pct_asian +  pct65plus +
+                         pct4064 + pct1840 + pctTrump_2016 + pre_week_rate + temp_oct + temp_nov + 
+                         offset(pre_election_rate), data = df_temp, weights = pop_2018)
+
+summary(model_temp)
+```
+I retain significance and there are now 3.58 additional covid cases for a 1% increase in the proportion of people
+who voted in-person on Election Day. When I instead control for the change in temperature, 
+rather than both October and November temperatures, the coefficient for in-person voting on Election Day is 4.85.
+
+#### 2.4 Placebo Check
+Lastly, as a placebo check, I perform this same analysis, but on a different time period that does not include the day of the 2020 General Election. I now define the pre-election period as September 16 to September 30 and the "post-election" period as October 16 to October 30 
+(rather than October 16 to October 30 and November 16 to November 30, respectively).
+
+With this earlier time period, `turnout` is no longer significant. The direction of the effect is also opposite. 
+
+```{r,echo = FALSE, message = FALSE}
+
+##' Placebo check with old date range to confirm turnout is not significant
+
+county_covid_placebo = read_csv("county_covid.csv")
+
+# time prior to fake election (09/16/2020 - 09/30/2020), 
+# time after fake election day  (10/16/2020 - 10/30/2020),
+cutoffs = c('2020-09-16', '2020-09-17', '2020-09-23', '2020-09-30', '2020-10-16', '2020-10-30')
+
+states_list = c("Alabama", "Arizona", "Arkansas", "California", "Delaware", 
+                "Florida", "Georgia", "Indiana", "Iowa", "Louisiana", "Maryland", 
+                "Michigan", "Mississippi", "Missouri", "New Hampshire", 
+                "New Mexico", "New Jersey", "North Carolina", "Ohio", "Oklahoma", 
+                "Pennsylvania", "Rhode Island", "South Carolina", "Vermont", 
+                "Virginia", "Wyoming")
+
+county_covid_placebo %>% 
+  filter(as.character(date) %in% cutoffs) %>%
+  select(-deaths) %>%
+  spread(date, cases) %>%
+  mutate(pre_covid_cases = `2020-09-30` - `2020-09-16`,
+         post_covid_cases = `2020-10-30` - `2020-10-16`,
+         pre_week_diff = (`2020-09-30` - `2020-09-23`) - (`2020-09-23` - `2020-09-16`)) %>%
+  select(c(fips, pre_covid_cases, post_covid_cases, pre_week_diff)) -> county_covid_placebo
+
+
+
+df %>% 
+  select(-c(pre_covid_cases, post_covid_cases, pre_week_diff)) %>%
+  left_join(county_covid_placebo, by = c('FIPS' = 'fips')) %>%
+  mutate(pre_election_rate = pre_covid_cases/pop_2018*100000,
+         post_election_rate = post_covid_cases/pop_2018*100000,
+         pre_week_rate = pre_week_diff/pop_2018*100000) -> df_sept
+
+model_sept = lm(post_election_rate ~ turnout + num_prec_pc + pre_week_rate +  state + 
+             med_age + medIncome_2018 + pctPovty_2018 + unplmtRate_2018 + noins_u65_2018 + 
+             pctUrban_2010 + pct_vet + avg_householdsize + pct_snap + pctno_hs + pctcollege + 
+             popDens + pct_black + pct_hisp + pct_asian +  pct65plus + pct4064 + 
+             pct1840 + pctTrump_2016 + offset(pre_election_rate), data = df_sept, weights = pop_2018)
+
+summary(model_sept)
+
+```
+
