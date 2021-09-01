@@ -13,7 +13,7 @@
 
 ---- Sources ----
 
-States' Election Data: 
+States' Election Data (all of these were scraped and data were pulled in April 2021): 
  * alabama: https://www.sos.alabama.gov/alabama-votes/voter/election-data
  * arizona: https://azsos.gov/2020-election-information/county-canvass-returns
  * arkansas: https://results.enr.clarityelections.com/AR/106124/web.274956/#/summary
