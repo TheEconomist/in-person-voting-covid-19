@@ -8,7 +8,7 @@
  * state_subset.csv: vote, covid, and demographic data by county for states for which there is complete data on in-person voting
  * fips_df.csv: fips code by state and county for merging data
  * temperatures.csv: average temperatures by county
- * county_covid.csv: covid cases by county (used for placebo test)
+ * county_covid_placebo.csv: covid cases by county (used for placebo test)
  * Markdown.Rmd: analysis (model & robustness checks)
 
 ---- Sources ----
@@ -42,5 +42,6 @@ Demographic Data:
  * county-level demographics from https://data.hrsa.gov/data/download?data=AHRF#AHRF
  * Trump vote share from https://github.com/tonmcg/US_County_Level_Election_Results_08-20/blob/master/2016_US_County_Level_Presidential_Results.csv 
 
-
+Temperature Data:
+ * from https://www.ncdc.noaa.gov/cag/county/mapping
 
