@@ -207,29 +207,7 @@ With this earlier time period, `turnout` is no longer significant. The direction
 
 ##' Placebo check with old date range to confirm turnout is not significant
 
-county_covid_placebo = read_csv("county_covid.csv")
-
-# time prior to fake election (09/16/2020 - 09/30/2020), 
-# time after fake election day  (10/16/2020 - 10/30/2020),
-cutoffs = c('2020-09-16', '2020-09-17', '2020-09-23', '2020-09-30', '2020-10-16', '2020-10-30')
-
-states_list = c("Alabama", "Arizona", "Arkansas", "California", "Delaware", 
-                "Florida", "Georgia", "Indiana", "Iowa", "Louisiana", "Maryland", 
-                "Michigan", "Mississippi", "Missouri", "New Hampshire", 
-                "New Mexico", "New Jersey", "North Carolina", "Ohio", "Oklahoma", 
-                "Pennsylvania", "Rhode Island", "South Carolina", "Vermont", 
-                "Virginia", "Wyoming")
-
-county_covid_placebo %>% 
-  filter(as.character(date) %in% cutoffs) %>%
-  select(-deaths) %>%
-  spread(date, cases) %>%
-  mutate(pre_covid_cases = `2020-09-30` - `2020-09-16`,
-         post_covid_cases = `2020-10-30` - `2020-10-16`,
-         pre_week_diff = (`2020-09-30` - `2020-09-23`) - (`2020-09-23` - `2020-09-16`)) %>%
-  select(c(fips, pre_covid_cases, post_covid_cases, pre_week_diff)) -> county_covid_placebo
-
-
+county_covid_placebo = read_csv("county_covid_placebo.csv")
 
 df %>% 
   select(-c(pre_covid_cases, post_covid_cases, pre_week_diff)) %>%
